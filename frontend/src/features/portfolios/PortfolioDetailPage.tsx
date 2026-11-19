@@ -82,7 +82,11 @@ export default function PortfolioDetailPage() {
         <h2>Applications</h2>
         {row.applications.length ? (
           <ul className="divide-y divide-outline-variant">
-            {row.applications.map(application => <li className="py-4" key={application.id}>{application.name}</li>)}
+            {row.applications.map(application => (
+              <li className="py-4" key={application.id}>
+                <Link to={`/applications/${application.id}`}>{application.name}</Link>
+              </li>
+            ))}
           </ul>
         ) : <p className="muted">No applications in this portfolio.</p>}
         {error && <p className="error" role="alert">{error}</p>}

@@ -24,7 +24,10 @@ export function Shell() {
         <Link className="wordmark" to="/profile">Portfolio</Link>
         <nav aria-label="Main navigation">
           {!auth.user?.mustChangePassword && auth.user?.permissions.includes('view') && (
-            <NavLink to="/portfolios">Portfolios</NavLink>
+            <>
+              <NavLink to="/portfolios">Portfolios</NavLink>
+              <NavLink to="/applications">Applications</NavLink>
+            </>
           )}
           <NavLink to="/profile">My Profile</NavLink>
         </nav>

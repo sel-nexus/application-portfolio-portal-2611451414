@@ -8,12 +8,15 @@ import ProfilePage from './features/identity/ProfilePage';
 import PortfolioListPage from './features/portfolios/PortfolioListPage';
 import PortfolioDetailPage from './features/portfolios/PortfolioDetailPage';
 import PortfolioFormPage from './features/portfolios/PortfolioFormPage';
+import ApplicationListPage from './features/applications/ApplicationListPage';
+import ApplicationDetailPage from './features/applications/ApplicationDetailPage';
+import ApplicationFormPage from './features/applications/ApplicationFormPage';
 
 /** Revalidate the bearer on protected route navigation, including history Back. */
 function Protected() {
   const auth = useAuth();
   const location = useLocation();
-  useEffect(() => { auth.refresh(); }, [location.key, auth.refresh]);
+  useEffect(() => { auth.refresh(); }, [location.pathname, auth.refresh]);
   if (auth.loading) return <main className="container" role="status">Checking session…</main>;
   if (auth.error) return (
     <main className="container">
@@ -36,6 +39,10 @@ export default function App() {
           <Route element={<Protected />}>
             <Route element={<Shell />}>
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/applications" element={<ApplicationListPage />} />
+              <Route path="/applications/new" element={<ApplicationFormPage />} />
+              <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+              <Route path="/applications/:applicationId/edit" element={<ApplicationFormPage />} />
               <Route path="/portfolios" element={<PortfolioListPage />} />
               <Route path="/portfolios/new" element={<PortfolioFormPage />} />
               <Route path="/portfolios/:portfolioId" element={<PortfolioDetailPage />} />

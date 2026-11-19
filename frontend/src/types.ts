@@ -22,3 +22,17 @@ export interface PortfolioDetail extends PortfolioSummary {
 export interface PortfolioPage extends PageResult<PortfolioSummary> {
   productAreas: string[]; statuses: ('Active' | 'Archived')[];
 }
+export type Criticality = 'Low' | 'Medium' | 'High' | 'Critical';
+export type Lifecycle = 'Active' | 'Deprecated' | 'Retired';
+export type Risk = 'Low' | 'Medium' | 'High';
+export interface ApplicationPayload {
+  name: string; portfolioId: string; description: string; productArea: string;
+  businessOwner: string; technologyOwner: string; qualityOwner: string;
+  criticality: Criticality; tier: number; lifecycle: Lifecycle; technologyStack: string;
+  repositoryLink: string; pipelineLink: string; healthScore: number; qualityScore: number;
+  automationCoverage: number; unitTestCoverage: number; openDefects: number; openCriticalDefects: number; risk: Risk;
+}
+export interface ApplicationDetail extends ApplicationPayload { id: string; portfolio: string }
+export interface ApplicationPage extends PageResult<ApplicationDetail> {
+  portfolios: { id: string; name: string }[]; criticalities: Criticality[]; risks: Risk[]; lifecycles: Lifecycle[];
+}

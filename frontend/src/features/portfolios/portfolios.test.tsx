@@ -79,7 +79,7 @@ it('renders scoped columns and navigates from the shell to detail with stored ap
   await userEvent.setup().click(screen.getByRole('link', { name: 'Payments' }));
   expect(await screen.findByText('Stored portfolio description')).toBeVisible();
   expect(screen.getByText('Payment Gateway')).toBeVisible();
-  expect(screen.queryByRole('link', { name: 'Payment Gateway' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Payment Gateway' })).toHaveAttribute('href', '/applications/a1');
 });
 
 it('interacts with URL filters, clear and next/previous paging', async () => {

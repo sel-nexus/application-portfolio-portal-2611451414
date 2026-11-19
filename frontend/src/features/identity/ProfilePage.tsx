@@ -1,5 +1,6 @@
 /** Show current account facts and persist password and landing changes. */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../../api';
 import { Field } from '../../components/Field';
 import type { Landing, PasswordPayload, Session, User } from '../../types';
@@ -8,6 +9,7 @@ import { useAuth } from './AuthContext';
 /** Offer bounded self-service changes without editing email, role, or portfolio scope. */
 export default function ProfilePage() {
   const auth = useAuth();
+  const navigate = useNavigate();
   const user = auth.user!;
   const [landing, setLanding] = useState<Landing>(user.defaultLanding);
   const [passwords, setPasswords] = useState<PasswordPayload>({ currentPassword: '', newPassword: '', confirmation: '' });
@@ -16,7 +18,7 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState('');
   const [pending, setPending] = useState('');
   useEffect(() => setLanding(user.defaultLanding), [user.defaultLanding]);
-  /** Persist a landing preference without navigating to an unimplemented feature. */
+  /** Persist the preference for subsequent sign-ins without leaving the profile. */
   async function saveLanding(event: React.FormEvent) {
     event.preventDefault();
     if (pending) return;
@@ -41,7 +43,11 @@ export default function ProfilePage() {
     if (Object.keys(fields).length) return;
     setPending('password');
     try {
-      auth.replaceSession(await api<Session>('/profile/password', { method: 'POST', body: JSON.stringify(passwords) }));
+      const session = await api<Session>('/profile/password', { method: 'POST', body: JSON.stringify(passwords) });
+      auth.replaceSession(session);
+      if (user.mustChangePassword) {
+        navigate(session.user.defaultLanding === 'Dashboard' ? '/dashboard' : '/applications', { replace: true });
+      }
       setPasswords({ currentPassword: '', newPassword: '', confirmation: '' });
       setSuccess('Password changed. Other sessions have been signed out.');
     } catch (reason) {

@@ -17,7 +17,7 @@ test('maintains all fields, refreshes, enters from portfolio, and downloads matc
     await page.getByLabel('New password').fill('PortalChanged123!');
     await page.getByLabel('Confirm new password').fill('PortalChanged123!');
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page.getByText('Password changed. Other sessions have been signed out.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
   }
   await page.getByRole('link', { name: 'Applications', exact: true }).click();
   await expect(page.getByRole('table')).toBeVisible();
@@ -98,6 +98,9 @@ test('mobile engineer sees API-scoped inventory and can enter application from p
   await page.getByLabel('Email', { exact: true }).fill('engineer@portfolio.local');
   await page.getByLabel('Password', { exact: true }).fill('PortalDemo123!');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Portfolios', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Portfolios', exact: true })).toBeVisible();
   const loaded = page.waitForResponse(response => response.url().includes('/api/v1/applications?'));
   await page.getByRole('link', { name: 'Applications', exact: true }).click();
   const result = await (await loaded).json() as ApplicationPage;

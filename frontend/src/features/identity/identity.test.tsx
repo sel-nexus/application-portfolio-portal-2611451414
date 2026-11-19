@@ -37,6 +37,8 @@ beforeEach(() => {
     }
     if (!token) return response({ detail: 'Please sign in.' }, 401);
     if (path.endsWith('/auth/me')) return response(account);
+    if (path.includes('/applications?')) return response({ items: [], total: 0, page: 1, page_size: 10, portfolios: [], criticalities: [], risks: [], lifecycles: [] });
+    if (path.includes('/dashboard?')) return response({ metrics: { enterpriseQualityScore: 0, applicationHealth: 0, automationMaturity: 0, openCriticalDefects: 0, applicationsAtRisk: 0, totalApplications: 0, totalPortfolios: 0 }, portfolioQuality: [], applicationsAtRisk: [], portfolios: [], productAreas: [], risks: [] });
     if (path.endsWith('/auth/logout')) return response(null, 204);
     if (path.endsWith('/profile/password')) {
       if (body.currentPassword !== currentPassword) return response({ detail: { currentPassword: 'Current password is incorrect.' } }, 422);
@@ -55,7 +57,12 @@ async function signIn() {
   await user.type(screen.getByLabelText('Email'), initial.email);
   await user.type(screen.getByLabelText('Password'), 'PortalDemo123!');
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
-  await screen.findByRole('heading', { name: 'My Profile' });
+  await screen.findByRole('heading', { name: account.mustChangePassword ? 'My Profile' : account.defaultLanding === 'Dashboard' ? 'Executive Dashboard' : 'Applications' });
+  if (!account.mustChangePassword) {
+    await user.click(screen.getByText('Account', { exact: true }));
+    await user.click(screen.getByRole('link', { name: 'My Profile' }));
+    await screen.findByRole('heading', { name: 'My Profile' });
+  }
   return user;
 }
 
@@ -104,7 +111,7 @@ describe('identity interactions', () => {
     const user = await signIn();
     expect(screen.getAllByText('Sam Chen').length).toBeGreaterThan(0);
     expect(screen.getByText('Payments')).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeVisible();
     await user.selectOptions(screen.getByLabelText('Default landing page'), 'Dashboard');
     await user.click(screen.getByRole('button', { name: 'Save preference' }));
     expect(await screen.findByText('Default landing page saved.')).toBeVisible();
@@ -116,7 +123,7 @@ describe('identity interactions', () => {
   });
 
   it('shows forced change, validates confirmation/current password, and replaces the bearer after success', async () => {
-    account.mustChangePassword = true; account.role = 'Administrator';
+    account.mustChangePassword = true; account.role = 'Administrator'; account.defaultLanding = 'Dashboard';
     render(<App />); const user = await signIn();
     expect(screen.getByText('Change your initial password before continuing.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Save password' }));
@@ -133,10 +140,49 @@ describe('identity interactions', () => {
     await user.clear(screen.getByLabelText('Current password'));
     await user.type(screen.getByLabelText('Current password'), 'PortalDemo123!');
     await user.click(screen.getByRole('button', { name: 'Save password' }));
-    expect(await screen.findByText('Password changed. Other sessions have been signed out.')).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
+    expect(window.location.pathname).toBe('/dashboard');
+    await user.click(screen.getByText('Account', { exact: true }));
+    await user.click(screen.getByRole('link', { name: 'My Profile' }));
+    await screen.findByRole('heading', { name: 'My Profile' });
     expect(screen.queryByText('Change your initial password before continuing.')).not.toBeInTheDocument();
     expect(localStorage.getItem(TOKEN_KEY)).toBe('replacement-session');
     expect(screen.getByLabelText('Current password')).toHaveValue('');
+  });
+
+  it.each([
+    ['Administrator', 'Dashboard', '/dashboard', 'Executive Dashboard'],
+    ['Executive', 'Dashboard', '/dashboard', 'Executive Dashboard'],
+    ['Portfolio Leader', 'Applications', '/applications', 'Applications'],
+    ['Engineer', 'Applications', '/applications', 'Applications'],
+    ['Auditor', 'Applications', '/applications', 'Applications'],
+    ['Read Only', 'Applications', '/applications', 'Applications'],
+  ] as const)('lands %s on its normal default after sign-in', async (role, landing, path, heading) => {
+    account.role = role;
+    account.defaultLanding = landing;
+    render(<App />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Email'), initial.email);
+    await user.type(screen.getByLabelText('Password'), 'PortalDemo123!');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: heading })).toBeVisible();
+    expect(window.location.pathname).toBe(path);
+  });
+
+  it('uses a persisted profile override on later sign-ins', async () => {
+    render(<App />);
+    const user = await signIn();
+    await user.selectOptions(screen.getByLabelText('Default landing page'), 'Dashboard');
+    await user.click(screen.getByRole('button', { name: 'Save preference' }));
+    await screen.findByText('Default landing page saved.');
+    await user.click(screen.getByText('Account', { exact: true }));
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await user.type(screen.getByLabelText('Email'), initial.email);
+    await user.type(screen.getByLabelText('Password'), 'PortalDemo123!');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
+    expect(window.location.pathname).toBe('/dashboard');
   });
 
   it('rechecks protected access, clears expired storage, and returns unauthenticated routes to sign-in', async () => {
@@ -150,7 +196,9 @@ describe('identity interactions', () => {
 
   it('signs out using the account disclosure and removes protected content', async () => {
     render(<App />); const user = await signIn();
-    await user.click(screen.getByText('Account'));
+    if (!screen.getByRole('button', { name: 'Sign out' }).closest('details')?.open) {
+      await user.click(screen.getByText('Account'));
+    }
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByRole('heading', { name: 'Sign in' });
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
@@ -177,7 +225,8 @@ describe('identity interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(screen.getByRole('button', { name: 'Signing in…' })).toBeDisabled();
     resolve(response({ token: 'session-one', user: account }));
-    await screen.findByRole('heading', { name: 'My Profile' });
+    await screen.findByRole('heading', { name: 'Applications' });
+    expect(window.location.pathname).toBe('/applications');
   });
 
   it('shows profile save failures without discarding displayed account facts', async () => {

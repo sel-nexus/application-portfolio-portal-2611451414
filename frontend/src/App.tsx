@@ -5,6 +5,7 @@ import { Shell } from './components/Shell';
 import { AuthProvider, useAuth } from './features/identity/AuthContext';
 import LoginPage from './features/identity/LoginPage';
 import ProfilePage from './features/identity/ProfilePage';
+import DashboardPage from './features/dashboard/DashboardPage';
 import PortfolioListPage from './features/portfolios/PortfolioListPage';
 import PortfolioDetailPage from './features/portfolios/PortfolioDetailPage';
 import PortfolioFormPage from './features/portfolios/PortfolioFormPage';
@@ -29,7 +30,7 @@ function Protected() {
   return auth.user ? <Outlet /> : <Navigate to="/" replace />;
 }
 
-/** Map only completed identity pages; future landing preferences do not create dummy pages. */
+/** Map completed inventory and dashboard pages through one protected shell. */
 export default function App() {
   return (
     <BrowserRouter>
@@ -39,6 +40,7 @@ export default function App() {
           <Route element={<Protected />}>
             <Route element={<Shell />}>
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/applications" element={<ApplicationListPage />} />
               <Route path="/applications/new" element={<ApplicationFormPage />} />
               <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />

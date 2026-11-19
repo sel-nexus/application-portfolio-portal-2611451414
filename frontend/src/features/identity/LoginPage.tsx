@@ -14,7 +14,9 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
-  if (auth.user) return <Navigate to="/profile" replace />;
+  if (auth.user) return (
+    <Navigate to={auth.user.mustChangePassword ? '/profile' : auth.user.defaultLanding === 'Dashboard' ? '/dashboard' : '/applications'} replace />
+  );
   /** Validate required inputs before contacting the account service. */
   async function submit(event: React.FormEvent) {
     event.preventDefault();

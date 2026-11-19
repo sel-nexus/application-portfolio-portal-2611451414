@@ -21,15 +21,18 @@ export function Shell() {
     <>
       <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="site-header">
-        <Link className="wordmark" to="/profile">Portfolio</Link>
+        <Link className="wordmark"
+          to={auth.user?.mustChangePassword ? '/profile' : auth.user?.defaultLanding === 'Dashboard' ? '/dashboard' : '/applications'}>
+          Portfolio
+        </Link>
         <nav aria-label="Main navigation">
           {!auth.user?.mustChangePassword && auth.user?.permissions.includes('view') && (
             <>
+              <NavLink to="/dashboard">Dashboard</NavLink>
               <NavLink to="/portfolios">Portfolios</NavLink>
               <NavLink to="/applications">Applications</NavLink>
             </>
           )}
-          <NavLink to="/profile">My Profile</NavLink>
         </nav>
         <div className="account">
           <span>{auth.user?.name}</span>

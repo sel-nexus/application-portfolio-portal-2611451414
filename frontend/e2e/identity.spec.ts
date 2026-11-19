@@ -1,6 +1,6 @@
 /** Specify real login/profile journeys for later execution; no browser or API mocks. */
 import { test, expect } from '@playwright/test';
-import { captureErrors, signIn, signOut } from './helpers';
+import { captureErrors, signIn, signOut, openProfile } from './helpers';
 
 test('engineer preference persists after refresh and sign-out blocks browser Back', async ({ page }, testInfo) => {
   const errors = captureErrors(page);
@@ -10,9 +10,11 @@ test('engineer preference persists after refresh and sign-out blocks browser Bac
   await expect(page.getByText('Email is required')).toBeVisible();
   await expect(page.getByText('Password is required')).toBeVisible();
   const session = await signIn(page, 'engineer@portfolio.local');
+  expect(session.user.defaultLanding).toBe('Applications');
+  await openProfile(page);
   await expect(page.locator('dd').filter({ hasText: session.user.managerName })).toBeVisible();
   for (const name of session.user.portfolioNames) await expect(page.locator('dd').filter({ hasText: name })).toBeVisible();
-  await page.getByRole('link', { name: 'My Profile', exact: true }).first().click();
+  await expect(page.locator('dd').filter({ hasText: session.user.email })).toBeVisible();
   await page.getByLabel('Default landing page').selectOption('Dashboard');
   const saved = page.waitForResponse(response => response.url().endsWith('/api/v1/profile') && response.request().method() === 'PUT');
   await page.getByRole('button', { name: 'Save preference' }).click();
@@ -31,6 +33,8 @@ test('engineer preference persists after refresh and sign-out blocks browser Bac
   await expect(page.getByRole('heading', { name: 'My Profile' })).toHaveCount(0);
   const relogin = await signIn(page, session.user.email);
   expect(relogin.user.defaultLanding).toBe('Dashboard');
+  await expect(page.getByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
+  await openProfile(page);
   await page.getByLabel('Default landing page').selectOption('Applications');
   await page.getByRole('button', { name: 'Save preference' }).click();
   await expect(page.getByText('Default landing page saved.')).toBeVisible();
@@ -74,12 +78,13 @@ test('first administrator changes password with inline proof errors and replacem
   const changed = await (await replacement).json();
   expect(changed.token).not.toBe(initial.token);
   expect(changed.user.mustChangePassword).toBe(false);
-  await expect(page.getByText('Password changed. Other sessions have been signed out.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'My Profile' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
   await expect(page.getByText('Change your initial password before continuing.')).toHaveCount(0);
   await signOut(page);
   await signIn(page, 'admin@portfolio.local', 'ChangedDemo123!');
+  await openProfile(page);
   await page.getByLabel('Current password').fill('ChangedDemo123!');
   await page.getByLabel('New password', { exact: true }).fill('PortalDemo123!');
   await page.getByLabel('Confirm new password').fill('PortalDemo123!');

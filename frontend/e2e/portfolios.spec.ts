@@ -29,6 +29,7 @@ async function login(page: Page, local: string): Promise<void> {
     const saved = page.waitForResponse(response => response.url().endsWith('/profile/password'));
     await page.getByRole('button', { name: 'Save password' }).click();
     expect((await saved).status()).toBe(200);
+    await expect(page.getByRole('heading', { name: 'Executive Dashboard' })).toBeVisible();
   }
   await expect(page.getByRole('link', { name: 'Portfolios', exact: true })).toBeVisible();
 }

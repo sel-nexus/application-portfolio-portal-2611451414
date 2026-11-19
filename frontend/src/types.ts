@@ -36,3 +36,23 @@ export interface ApplicationDetail extends ApplicationPayload { id: string; port
 export interface ApplicationPage extends PageResult<ApplicationDetail> {
   portfolios: { id: string; name: string }[]; criticalities: Criticality[]; risks: Risk[]; lifecycles: Lifecycle[];
 }
+
+/** Describe the seven read-only dashboard values and scoped navigation choices. */
+export interface DashboardMetrics {
+  enterpriseQualityScore: number;
+  applicationHealth: number;
+  automationMaturity: number;
+  openCriticalDefects: number;
+  applicationsAtRisk: number;
+  totalApplications: number;
+  totalPortfolios: number;
+}
+export interface DashboardLink { id: string; name: string }
+export interface DashboardResponse {
+  metrics: DashboardMetrics;
+  portfolioQuality: (DashboardLink & { qualityScore: number })[];
+  applicationsAtRisk: (DashboardLink & { applications: DashboardLink[] })[];
+  portfolios: DashboardLink[];
+  productAreas: string[];
+  risks: Risk[];
+}

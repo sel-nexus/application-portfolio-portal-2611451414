@@ -24,16 +24,28 @@ export async function signIn(page: Page, email: string, password = 'PortalDemo12
   const response = await received;
   expect(response.status()).toBe(200);
   const session = await response.json() as Session;
-  await expect(page.getByRole('heading', { name: 'My Profile' })).toBeVisible();
-  await expect(page.locator('dd').filter({ hasText: session.user.email })).toBeVisible();
+  const heading = session.user.mustChangePassword ? 'My Profile' : session.user.defaultLanding === 'Dashboard' ? 'Executive Dashboard' : 'Applications';
+  await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+  if (session.user.mustChangePassword) {
+    await expect(page.locator('dd').filter({ hasText: session.user.email })).toBeVisible();
+  }
   return session;
 }
 
 /** Revoke through the visible account disclosure and verify that private UI disappears. */
 export async function signOut(page: Page): Promise<void> {
-  await page.getByText('Account', { exact: true }).click();
+  const menu = page.locator('details').filter({ has: page.getByText('Account', { exact: true }) });
+  if (await menu.getAttribute('open') === null) await page.getByText('Account', { exact: true }).click();
   const received = page.waitForResponse(response => response.url().endsWith('/api/v1/auth/logout'));
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   expect((await received).status()).toBe(204);
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+}
+
+/** Enter profile through the account menu rather than assuming it is the landing page. */
+export async function openProfile(page: Page): Promise<void> {
+  const menu = page.locator('details').filter({ has: page.getByText('Account', { exact: true }) });
+  if (await menu.getAttribute('open') === null) await page.getByText('Account', { exact: true }).click();
+  await page.getByRole('link', { name: 'My Profile', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'My Profile', exact: true })).toBeVisible();
 }

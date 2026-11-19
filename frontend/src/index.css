@@ -114,3 +114,28 @@ dialog::backdrop { background: rgb(0 0 0 / .25); }
   .login-card { padding: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+
+/* Preserve the prescribed flat dashboard grid and stored percentage bars. */
+.dashboard-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; padding: 16px;
+  margin-bottom: 24px; background: var(--surface-tint); border-radius: var(--radius-lg); }
+.dashboard-filters > div { flex: 1 1 200px; min-width: 0; }
+.dashboard-metrics { display: grid; grid-template-columns: 1fr; gap: 24px; margin-bottom: 24px; }
+.metric-card h2 { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .05em; color: var(--on-surface-variant); }
+.metric-value { font-size: 32px; line-height: 40px; font-weight: 700; color: var(--deep-forest-teal); margin: 0; font-variant-numeric: tabular-nums; }
+.metric-value.metric-alert { color: var(--error); }
+.metric-value.metric-zero { color: var(--on-surface); }
+.dashboard-breakdowns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.dashboard-list { list-style: none; padding: 0; margin: 0; }
+.dashboard-list > li { padding: 16px 0; border-bottom: 1px solid var(--outline-variant); }
+.dashboard-list > li:last-child { border-bottom: 0; }
+.quality-label { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.quality-track { height: 8px; border-radius: var(--radius-full); background: var(--surface-container); overflow: hidden; }
+.quality-track > div { height: 100%; background: var(--living-green); border-radius: inherit; }
+.risk-groups h3 { font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: .05em; margin-bottom: 8px; }
+.risk-groups ul { list-style: none; padding: 0; }
+.risk-groups a { font-size: 14px; line-height: 20px; }
+.skeleton-value { height: 40px; margin-top: 16px; background: var(--surface-container); border-radius: var(--radius-default); }
+.site-header nav { flex-wrap: wrap; }
+@media (min-width: 768px) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .dashboard-breakdowns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

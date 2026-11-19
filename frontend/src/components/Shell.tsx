@@ -31,6 +31,7 @@ export function Shell() {
               <NavLink to="/dashboard">Dashboard</NavLink>
               <NavLink to="/portfolios">Portfolios</NavLink>
               <NavLink to="/applications">Applications</NavLink>
+              <NavLink to="/reports">Reports</NavLink>
             </>
           )}
         </nav>

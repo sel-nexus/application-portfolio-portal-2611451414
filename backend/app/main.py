@@ -18,6 +18,7 @@ from app.repositories.portfolios import PortfolioRepository
 from app.repositories.applications import ApplicationRepository
 from app.routers.applications import router as applications_router
 from app.routers.dashboard import router as dashboard_router
+from app.routers.reports import router as reports_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(portfolios_router)
     application.include_router(applications_router)
     application.include_router(dashboard_router)
+    application.include_router(reports_router)
 
     @application.middleware("http")
     async def no_store(request: Request, call_next) -> AnyResponse:

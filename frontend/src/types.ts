@@ -10,3 +10,15 @@ export interface User {
 export interface Session { token: string; user: User }
 export interface PasswordPayload { currentPassword: string; newPassword: string; confirmation: string }
 export interface PageResult<T> { items: T[]; total: number; page: number; page_size: number }
+export interface PortfolioPayload {
+  name: string; owner: string; description: string; productArea: string; status: 'Active' | 'Archived';
+}
+export interface PortfolioSummary extends PortfolioPayload {
+  id: string; applicationCount: number; qualityScore: number;
+}
+export interface PortfolioDetail extends PortfolioSummary {
+  applications: { id: string; name: string }[];
+}
+export interface PortfolioPage extends PageResult<PortfolioSummary> {
+  productAreas: string[]; statuses: ('Active' | 'Archived')[];
+}

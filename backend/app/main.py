@@ -13,6 +13,8 @@ from app.core.config import Settings
 from app.core.database import create_indexes
 from app.core.seed import seed_database
 from app.routers.identity import router
+from app.routers.portfolios import router as portfolios_router
+from app.repositories.portfolios import PortfolioRepository
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             await client.admin.command("ping")
             await create_indexes(application.state.db)
+            await PortfolioRepository(application.state.db).ensure_indexes()
             if config.SEED_ON_STARTUP:
                 await seed_database(application.state.db)
             yield
@@ -42,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.add_middleware(CORSMiddleware, allow_origins=config.cors_origins,
         allow_credentials=False, allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
     application.include_router(router)
+    application.include_router(portfolios_router)
 
     @application.middleware("http")
     async def no_store(request: Request, call_next) -> AnyResponse:

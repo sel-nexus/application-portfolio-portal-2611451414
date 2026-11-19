@@ -5,6 +5,9 @@ import { Shell } from './components/Shell';
 import { AuthProvider, useAuth } from './features/identity/AuthContext';
 import LoginPage from './features/identity/LoginPage';
 import ProfilePage from './features/identity/ProfilePage';
+import PortfolioListPage from './features/portfolios/PortfolioListPage';
+import PortfolioDetailPage from './features/portfolios/PortfolioDetailPage';
+import PortfolioFormPage from './features/portfolios/PortfolioFormPage';
 
 /** Revalidate the bearer on protected route navigation, including history Back. */
 function Protected() {
@@ -19,6 +22,7 @@ function Protected() {
       <a href="/">Return to sign in</a>
     </main>
   );
+  if (auth.user?.mustChangePassword && location.pathname !== '/profile') return <Navigate to="/profile" replace />;
   return auth.user ? <Outlet /> : <Navigate to="/" replace />;
 }
 
@@ -32,6 +36,10 @@ export default function App() {
           <Route element={<Protected />}>
             <Route element={<Shell />}>
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/portfolios" element={<PortfolioListPage />} />
+              <Route path="/portfolios/new" element={<PortfolioFormPage />} />
+              <Route path="/portfolios/:portfolioId" element={<PortfolioDetailPage />} />
+              <Route path="/portfolios/:portfolioId/edit" element={<PortfolioFormPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -23,6 +23,9 @@ export function Shell() {
       <header className="site-header">
         <Link className="wordmark" to="/profile">Portfolio</Link>
         <nav aria-label="Main navigation">
+          {!auth.user?.mustChangePassword && auth.user?.permissions.includes('view') && (
+            <NavLink to="/portfolios">Portfolios</NavLink>
+          )}
           <NavLink to="/profile">My Profile</NavLink>
         </nav>
         <div className="account">

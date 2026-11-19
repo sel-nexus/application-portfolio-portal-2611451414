@@ -1,7 +1,7 @@
 /** Verify live persisted application maintenance, navigation, exports and mobile access. */
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { captureErrors } from './helpers';
+import { captureErrors, establishInitialSession, signInHttp } from './helpers';
 import type { ApplicationDetail, ApplicationPage, Session } from '../src/types';
 
 test('maintains all fields, refreshes, enters from portfolio, and downloads matching CSV', async ({ page }) => {
@@ -113,5 +113,42 @@ test('mobile engineer sees API-scoped inventory and can enter application from p
   await page.getByRole('link', { name: row.name, exact: true }).click();
   await expect(page.getByRole('progressbar', { name: 'Health', exact: true })).toHaveAttribute('aria-valuenow', String(row.healthScore));
   await page.screenshot({ path: testInfo.outputPath('applications-mobile.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('initial direct address hides an application outside the engineer portfolio scope', async ({ page }) => {
+  const errors = captureErrors(page, [404]);
+  const unrestricted = await signInHttp(page.request, 'executive@portfolio.local');
+  const inventoryResponse = await page.request.get('/api/v1/applications?page_size=100', {
+    headers: { Authorization: `Bearer ${unrestricted.token}` },
+  });
+  expect(inventoryResponse.status()).toBe(200);
+  const inventory = await inventoryResponse.json() as ApplicationPage;
+  const restricted = await signInHttp(page.request, 'engineer@portfolio.local');
+  expect(restricted.user.portfolioAccess.length).toBeGreaterThan(0);
+  const hidden = inventory.items.find(row => !restricted.user.portfolioAccess.includes(row.portfolioId));
+  expect(hidden).toBeDefined();
+  if (!hidden) throw new Error('Unrestricted inventory has no application outside engineer scope');
+  const path = `/api/v1/applications/${hidden.id}`;
+  const hiddenResponse = await page.request.get(path, { headers: { Authorization: `Bearer ${unrestricted.token}` } });
+  expect(hiddenResponse.status()).toBe(200);
+  const detail = await hiddenResponse.json() as ApplicationDetail;
+  await establishInitialSession(page, restricted);
+  const refused = page.waitForResponse(response => new URL(response.url()).pathname === path);
+  // Permission direct-address coverage uses only the initial browser navigation.
+  await page.goto(`/applications/${hidden.id}`);
+  const response = await refused;
+  expect(response.status()).toBe(404);
+  expect(await response.json()).toEqual({ detail: 'This record is not available.' });
+  await expect(page.getByRole('alert')).toHaveText('This record is not available.');
+  await expect(page.locator('.facts')).toHaveCount(0);
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  for (const value of [detail.name, detail.description, detail.portfolio, detail.productArea,
+    detail.businessOwner, detail.technologyOwner, detail.qualityOwner, detail.technologyStack,
+    detail.repositoryLink, detail.pipelineLink]) {
+    if (value) await expect(page.locator('#main-content').getByText(value, { exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByRole('link', { name: 'Edit application' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete application' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -147,6 +147,60 @@ async def test_create_each_missing_required_field(client, admin_headers, payload
     assert (await client.post('/api/v1/admin/users', headers=admin_headers, json=payload)).status_code == 422
 
 
+@pytest.mark.parametrize('key', ['name', 'email', 'role', 'portfolioAccess', 'status', 'managerName', 'vendor'])
+async def test_update_each_missing_required_field_preserves_state(
+    client: Any, db: Any, admin_headers: dict[str, str], payload: dict[str, Any], key: str,
+) -> None:
+    """Identify each omitted maintenance field without changing accounts, sessions or history."""
+    created = await client.post('/api/v1/admin/users', headers=admin_headers, json=payload)
+    assert created.status_code == 201
+    login = await client.post('/api/v1/auth/login', json={'email': payload['email'], 'password': payload['initialPassword']})
+    assert login.status_code == 200
+    edit = {field: value for field, value in payload.items() if field != 'initialPassword'}
+    edit.update(name='Rejected edit', role='Executive', status='Inactive', managerName='Changed manager', vendor=False)
+    edit.pop(key)
+    before = {name: await db[name].find({}).sort('_id', 1).to_list(None) for name in ('users', 'sessions', 'audit')}
+    assert any(row['userId'] == ObjectId(created.json()['id']) and not row['revoked'] for row in before['sessions'])
+
+    response = await client.put('/api/v1/admin/users/' + created.json()['id'], headers=admin_headers, json=edit)
+
+    assert response.status_code == 422
+    errors = response.json()['detail']
+    assert any(error['loc'] == ['body', key] and error['type'] == 'missing' for error in errors)
+    for name, rows in before.items():
+        assert await db[name].find({}).sort('_id', 1).to_list(None) == rows
+
+
+@pytest.mark.parametrize('key,value', [
+    ('name', 123), ('email', {'$ne': None}), ('role', ['Engineer']),
+    ('portfolioAccess', {'$ne': None}), ('portfolioAccess', [123]),
+    ('status', 123), ('managerName', ['Manager']), ('vendor', 'false'), ('vendor', 0),
+    ('name', None), ('email', None), ('role', None), ('portfolioAccess', None),
+    ('status', None), ('managerName', None), ('vendor', None),
+])
+async def test_update_each_invalid_field_type_preserves_state(
+    client: Any, db: Any, admin_headers: dict[str, str], payload: dict[str, Any], key: str, value: Any,
+) -> None:
+    """Reject invalid maintenance types at the affected field without any write or revocation."""
+    created = await client.post('/api/v1/admin/users', headers=admin_headers, json=payload)
+    assert created.status_code == 201
+    login = await client.post('/api/v1/auth/login', json={'email': payload['email'], 'password': payload['initialPassword']})
+    assert login.status_code == 200
+    edit = {field: item for field, item in payload.items() if field != 'initialPassword'}
+    edit.update(name='Rejected edit', role='Executive', status='Inactive', managerName='Changed manager', vendor=False)
+    edit[key] = value
+    before = {name: await db[name].find({}).sort('_id', 1).to_list(None) for name in ('users', 'sessions', 'audit')}
+    assert any(row['userId'] == ObjectId(created.json()['id']) and not row['revoked'] for row in before['sessions'])
+
+    response = await client.put('/api/v1/admin/users/' + created.json()['id'], headers=admin_headers, json=edit)
+
+    assert response.status_code == 422
+    errors = response.json()['detail']
+    assert any(error['loc'][:2] == ['body', key] for error in errors)
+    for name, rows in before.items():
+        assert await db[name].find({}).sort('_id', 1).to_list(None) == rows
+
+
 async def test_duplicate_create_edit_and_create_only_password(client, db, admin_headers, payload):
     """Normalize email uniqueness and preserve credentials/profile during edits."""
     first = await client.post('/api/v1/admin/users', headers=admin_headers, json=payload)
@@ -256,3 +310,77 @@ async def test_direct_service_create_edit_and_unchanged_permissions_audit(admin_
     payload['email'] = 'inactive-create@portfolio.local'; payload['status'] = 'Inactive'
     inactive = await admin_service.create(identity,UserCreate(**payload))
     assert inactive.status == 'Inactive'
+
+
+async def test_update_user_removed_after_initial_read_returns_exact_404_without_audit(
+    client: Any, db: Any, admin_service: AdminService, identity: dict[str, Any], payload: dict[str, Any],
+) -> None:
+    """Delete a real account between the service read and real update, retaining sessions and history."""
+    created = await admin_service.create(identity, UserCreate(**payload))
+    oid = ObjectId(created.id)
+    login = await client.post('/api/v1/auth/login', json={'email': payload['email'], 'password': payload['initialPassword']})
+    assert login.status_code == 200
+    before_audit = await db.audit.find({}).sort('_id', 1).to_list(None)
+    before_sessions = await db.sessions.find({}).sort('_id', 1).to_list(None)
+    assert any(row['userId'] == oid and not row['revoked'] for row in before_sessions)
+    other_users = await db.users.find({'_id': {'$ne': oid}}).sort('_id', 1).to_list(None)
+
+    class RemovedAfterRead(IdentityRepository):
+        """Coordinate real deletion after reading the target; inherit the production update."""
+
+        async def user_by_id(self, user_id: ObjectId) -> dict[str, Any] | None:
+            """Return the real initial document only after its deletion has completed."""
+            previous = await super().user_by_id(user_id)
+            assert user_id == oid and previous is not None
+            assert (await self.db.users.delete_one({'_id': user_id})).deleted_count == 1
+            return previous
+
+    racing = AdminService(RemovedAfterRead(db), AuditRepository(db))
+    edit = {key: value for key, value in payload.items() if key != 'initialPassword'}
+    edit.update(status='Inactive', role='Executive')
+    with pytest.raises(HTTPException) as missing:
+        await racing.update(identity, created.id, UserPayload(**edit))
+
+    assert missing.value.status_code == 404
+    assert missing.value.detail == 'This record is not available.'
+    assert await db.users.find_one({'_id': oid}) is None
+    assert await db.users.find({}).sort('_id', 1).to_list(None) == other_users
+    assert await db.sessions.find({}).sort('_id', 1).to_list(None) == before_sessions
+    assert await db.audit.find({}).sort('_id', 1).to_list(None) == before_audit
+    assert await db.audit.count_documents({'entityId': oid, 'action': {'$in': ['edit', 'role change']}}) == 0
+
+
+async def test_update_role_removed_after_initial_read_returns_exact_404_without_audit(
+    db: Any, identity: dict[str, Any],
+) -> None:
+    """Delete a real supported role after the initial read and let Mongo return no saved document."""
+    role = await db.roles.find_one({'name': 'Engineer'})
+    oid = role['_id']
+    before_audit = await db.audit.find({}).sort('_id', 1).to_list(None)
+    before_users = await db.users.find({}).sort('_id', 1).to_list(None)
+    before_sessions = await db.sessions.find({}).sort('_id', 1).to_list(None)
+    other_roles = await db.roles.find({'_id': {'$ne': oid}}).sort('_id', 1).to_list(None)
+
+    class RemovedAfterRead(IdentityRepository):
+        """Coordinate real role deletion while leaving the production update unchanged."""
+
+        async def role(self, role_id: ObjectId) -> dict[str, Any] | None:
+            """Read the existing supported role, then delete it before returning to the service."""
+            previous = await super().role(role_id)
+            assert role_id == oid and previous is not None
+            assert (await self.db.roles.delete_one({'_id': role_id})).deleted_count == 1
+            return previous
+
+    racing = AdminService(RemovedAfterRead(db), AuditRepository(db))
+    assert role['permissions'] != ['view']
+    with pytest.raises(HTTPException) as missing:
+        await racing.update_role(identity, str(oid), RolePayload(description='Rejected change', permissions=['view']))
+
+    assert missing.value.status_code == 404
+    assert missing.value.detail == 'This record is not available.'
+    assert await db.roles.find_one({'_id': oid}) is None
+    assert await db.roles.find({}).sort('_id', 1).to_list(None) == other_roles
+    assert await db.users.find({}).sort('_id', 1).to_list(None) == before_users
+    assert await db.sessions.find({}).sort('_id', 1).to_list(None) == before_sessions
+    assert await db.audit.find({}).sort('_id', 1).to_list(None) == before_audit
+    assert await db.audit.count_documents({'entityId': oid, 'action': {'$in': ['edit', 'permission change']}}) == 0

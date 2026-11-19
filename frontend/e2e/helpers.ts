@@ -1,18 +1,41 @@
 /** Reuse browser error capture and UI sign-in without mocking any application boundary. */
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { TOKEN_KEY } from '../src/api';
 import type { Session } from '../src/types';
 
-/** Capture runtime errors before navigation, excluding only expected HTTP credential refusals. */
-export function captureErrors(page: Page): string[] {
+/** Capture runtime errors, excluding expected credential refusals and explicitly asserted HTTP statuses. */
+export function captureErrors(page: Page, expectedResourceStatuses: number[] = []): string[] {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => {
-    if (message.type() === 'error' && !/Failed to load resource: the server responded with a status of (401|403|422)/.test(message.text())) {
+    const resourceStatus = /Failed to load resource: the server responded with a status of (\d+)/.exec(message.text());
+    const expectedResourceError = resourceStatus && [401, 403, 422, ...expectedResourceStatuses].includes(Number(resourceStatus[1]));
+    if (message.type() === 'error' && !expectedResourceError) {
       errors.push(message.text());
     }
   });
   return errors;
+}
+
+/** Obtain a real bearer for initial direct-address authorization tests, without browser navigation. */
+export async function signInHttp(request: APIRequestContext, email: string): Promise<Session> {
+  const response = await request.post('/api/v1/auth/login', {
+    data: { email, password: process.env.PORTFOLIO_E2E_PASSWORD ?? 'PortalDemo123!' },
+  });
+  expect(response.status()).toBe(200);
+  const session = await response.json() as Session;
+  expect(session.token).not.toBe('');
+  expect(session.user.email).toBe(email);
+  expect(session.user.mustChangePassword).toBe(false);
+  return session;
+}
+
+/** Store only the server-issued bearer before the permission test's first document is loaded. */
+export async function establishInitialSession(page: Page, session: Session): Promise<void> {
+  await page.addInitScript(({ key, token }: { key: string; token: string }) => {
+    localStorage.setItem(key, token);
+  }, { key: TOKEN_KEY, token: session.token });
 }
 
 /** Authenticate by filling visible inputs and assert on the actual backend-issued profile. */

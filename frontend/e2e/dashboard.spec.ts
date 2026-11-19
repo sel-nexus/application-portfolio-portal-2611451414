@@ -30,6 +30,43 @@ async function assertDashboard(page: Page, data: DashboardResponse): Promise<voi
   }
 }
 
+test('dashboard shows loading during a delayed real backend request and then real metrics', async ({ page }) => {
+  const errors = captureErrors(page);
+  await page.goto('/');
+  await signIn(page, 'leader@portfolio.local');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false, latency: 2500, downloadThroughput: -1, uploadThroughput: -1,
+  });
+  let dashboardResponded = false;
+  const isDashboard = (url: string): boolean => new URL(url).pathname === '/api/v1/dashboard';
+  page.on('response', response => {
+    if (isDashboard(response.url())) dashboardResponded = true;
+  });
+  try {
+    const requested = page.waitForRequest(request => isDashboard(request.url()));
+    const received = page.waitForResponse(response => isDashboard(response.url()));
+    await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+    await requested;
+    const loading = page.getByRole('status', { name: 'Loading dashboard', exact: true });
+    await expect(loading).toBeVisible();
+    await expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(dashboardResponded).toBe(false);
+    const response = await received;
+    expect(response.status()).toBe(200);
+    const data = await response.json() as DashboardResponse;
+    await expect(loading).toHaveCount(0);
+    await assertDashboard(page, data);
+  } finally {
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+    });
+    await cdp.detach();
+  }
+  expect(errors).toEqual([]);
+});
+
 test('executive filters every metric and breakdown, persists URL and opens both detail links', async ({ page }, info) => {
   const errors = captureErrors(page);
   await page.goto('/dashboard');

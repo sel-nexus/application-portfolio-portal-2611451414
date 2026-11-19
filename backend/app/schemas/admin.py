@@ -4,6 +4,7 @@ from typing import Literal
 from bson import ObjectId
 from pydantic import BaseModel, Field, field_validator
 from app.schemas.auth import Payload, LoginRequest, PublicUser, RoleName, PyObjectId
+from app.schemas.text import plain_text
 
 Permission = Literal["view", "create", "edit", "delete", "export", "administer"]
 
@@ -18,6 +19,12 @@ class UserPayload(Payload):
     status: Literal["Active", "Inactive"]
     managerName: str = Field(max_length=200)
     vendor: bool
+
+    @field_validator("name", "managerName", "email")
+    @classmethod
+    def safe_text(cls, value: str) -> str:
+        """Reject markup and traversal in account facts, never password values."""
+        return plain_text(value)
 
     @field_validator("name", "managerName")
     @classmethod
@@ -79,6 +86,12 @@ class RolePayload(Payload):
 
     description: str = Field(max_length=5000)
     permissions: list[Permission] = Field(max_length=6)
+
+    @field_validator("description")
+    @classmethod
+    def safe_description(cls, value: str) -> str:
+        """Require plain role descriptions before configuration or audit writes."""
+        return plain_text(value)
 
     @field_validator("permissions")
     @classmethod

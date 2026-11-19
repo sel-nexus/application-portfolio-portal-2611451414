@@ -2,6 +2,7 @@
 
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.schemas.text import plain_text
 
 
 class PortfolioPayload(BaseModel):
@@ -13,6 +14,12 @@ class PortfolioPayload(BaseModel):
     description: str = Field(default="", max_length=5000)
     productArea: str = Field(default="", max_length=200)
     status: Literal["Active", "Archived"] = "Active"
+
+    @field_validator("name", "owner", "description", "productArea")
+    @classmethod
+    def safe_text(cls, value: str) -> str:
+        """Reject markup and traversal before inventory or audit persistence."""
+        return plain_text(value)
 
     @field_validator("name")
     @classmethod

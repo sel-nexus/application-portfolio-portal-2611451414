@@ -21,7 +21,7 @@ class AuditRepository(MongoRepository):
         """Read a bounded audit page using an internally constructed filter."""
         if page < 1 or not 1 <= page_size <= 100:
             raise ValueError("Invalid pagination")
-        projection = {key: 1 for key in ("time", "person", "action", "entityType", "entityId", "summary")}
+        projection = {key: 1 for key in ("time", "personId", "person", "action", "entityType", "entityId", "summary")}
         rows = await self.db.audit.find(query, projection).sort([("time", -1), ("_id", -1)]).skip(
             (page - 1) * page_size).limit(page_size).to_list(None)
         return {"items": [serialize(row) for row in rows], "total": await self.db.audit.count_documents(query),

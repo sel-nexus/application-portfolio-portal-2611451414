@@ -69,7 +69,9 @@ for (const mobile of [false, true]) {
     const editedResponse = await editedReceived; expect(editedResponse.status()).toBe(200);
     const edited = await editedResponse.json() as User;
     expect(edited.managerName).toBe('Updated Journey Manager'); expect(edited.role).toBe('Executive');
-    const refreshedReceived = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/admin/users');
+    await expect(page.getByRole('button', { name: `Edit ${edited.name}`, exact: true })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const refreshedReceived = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/admin/users' && response.request().method() === 'GET');
     const currentURL = page.url(); await page.reload();
     const refreshed = await refreshedReceived; expect(refreshed.status()).toBe(200);
     expect((await refreshed.json() as PageResult<User>).items.find(user => user.id === created.id)).toEqual(edited);

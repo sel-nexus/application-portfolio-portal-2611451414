@@ -144,6 +144,112 @@ async def test_password_payload_boundaries(client, engineer_headers, field, valu
     assert (await client.post("/api/v1/profile/password", headers=engineer_headers, json=payload)).status_code == 422
 
 
+@pytest.mark.parametrize("email", ["engineer@portfolio.local", "admin@portfolio.local"])
+@pytest.mark.parametrize("field", ["currentPassword", "newPassword", "confirmation"])
+@pytest.mark.parametrize("case,value", [
+    pytest.param("missing", None, id="missing"),
+    pytest.param("value", None, id="null"),
+    pytest.param("value", 123, id="integer"),
+    pytest.param("value", 1.5, id="float"),
+    pytest.param("value", True, id="boolean"),
+    pytest.param("value", {"$ne": None}, id="object"),
+    pytest.param("value", ["new"], id="array"),
+])
+async def test_password_rejects_independent_missing_and_invalid_types_without_mutation(client, db, email, field, case, value):
+    """Reject each malformed field without clearing forced change or revoking sessions."""
+    login = {"email": email, "password": DEMO_PASSWORD}
+    first = await client.post("/api/v1/auth/login", json=login)
+    other = await client.post("/api/v1/auth/login", json=login)
+    assert first.status_code == 200 and other.status_code == 200
+    headers = bearer(first.json()["token"])
+    old = await db.users.find_one({"email": email})
+    sessions = await db.sessions.find({}).sort("_id", 1).to_list(None)
+    assert len(sessions) == 2 and all(not row["revoked"] for row in sessions)
+    assert old["mustChangePassword"] is (email == "admin@portfolio.local")
+    payload = {"currentPassword": DEMO_PASSWORD, "newPassword": "new", "confirmation": "new"}
+    if case == "missing":
+        del payload[field]
+    else:
+        payload[field] = value
+
+    response = await client.post("/api/v1/profile/password", headers=headers, json=payload)
+
+    assert response.status_code == 422
+    assert [error["loc"] for error in response.json()["detail"]] == [["body", field]]
+    assert response.json()["detail"][0]["type"] == ("missing" if case == "missing" else "string_type")
+    stored = await db.users.find_one({"_id": old["_id"]})
+    assert stored["passwordHash"] == old["passwordHash"]
+    assert stored["authVersion"] == old["authVersion"]
+    assert stored["mustChangePassword"] is old["mustChangePassword"]
+    assert await db.sessions.find({}).sort("_id", 1).to_list(None) == sessions
+    for token in [first.json()["token"], other.json()["token"]]:
+        me = await client.get("/api/v1/auth/me", headers=bearer(token))
+        assert me.status_code == 200
+        assert me.json()["mustChangePassword"] is old["mustChangePassword"]
+    assert await db.audit.count_documents({"summary": "Changed password."}) == 0
+
+
+@pytest.mark.parametrize("field", ["email", "password"])
+@pytest.mark.parametrize("case,value", [
+    pytest.param("missing", None, id="missing"),
+    pytest.param("value", None, id="null"),
+    pytest.param("value", 123, id="integer"),
+    pytest.param("value", 1.5, id="float"),
+    pytest.param("value", True, id="boolean"),
+    pytest.param("value", {"$ne": None}, id="object"),
+    pytest.param("value", ["engineer@portfolio.local"], id="array"),
+])
+async def test_login_rejects_independent_missing_and_invalid_types_without_mutation(client, db, field, case, value):
+    """Report the malformed credential field without sign-in state or sessions."""
+    users = await db.users.find({}).sort("_id", 1).to_list(None)
+    sessions = await db.sessions.find({}).sort("_id", 1).to_list(None)
+    audit_count = await db.audit.count_documents({})
+    payload = {"email": "engineer@portfolio.local", "password": DEMO_PASSWORD}
+    if case == "missing":
+        del payload[field]
+    else:
+        payload[field] = value
+
+    response = await client.post("/api/v1/auth/login", json=payload)
+
+    assert response.status_code == 422
+    assert [error["loc"] for error in response.json()["detail"]] == [["body", field]]
+    assert response.json()["detail"][0]["type"] == ("missing" if case == "missing" else "string_type")
+    assert await db.users.find({}).sort("_id", 1).to_list(None) == users
+    assert await db.sessions.find({}).sort("_id", 1).to_list(None) == sessions
+    assert await db.audit.count_documents({}) == audit_count
+
+
+@pytest.mark.parametrize("case,value", [
+    pytest.param("missing", None, id="missing"),
+    pytest.param("value", None, id="null"),
+    pytest.param("value", 123, id="integer"),
+    pytest.param("value", 1.5, id="float"),
+    pytest.param("value", True, id="boolean"),
+    pytest.param("value", {"$ne": None}, id="object"),
+    pytest.param("value", ["Dashboard"], id="array"),
+    pytest.param("value", "", id="empty"),
+    pytest.param("value", "Unknown", id="invalid-landing"),
+])
+async def test_profile_rejects_missing_and_invalid_landing_without_mutation(client, db, engineer_headers, case, value):
+    """Keep the stored preference and identity state after field-level rejection."""
+    old = await db.users.find_one({"email": "engineer@portfolio.local"})
+    sessions = await db.sessions.find({}).sort("_id", 1).to_list(None)
+    audit_count = await db.audit.count_documents({})
+    payload = {} if case == "missing" else {"defaultLanding": value}
+
+    response = await client.put("/api/v1/profile", headers=engineer_headers, json=payload)
+
+    assert response.status_code == 422
+    assert [error["loc"] for error in response.json()["detail"]] == [["body", "defaultLanding"]]
+    assert response.json()["detail"][0]["type"] == ("missing" if case == "missing" else "literal_error")
+    assert await db.users.find_one({"_id": old["_id"]}) == old
+    assert await db.sessions.find({}).sort("_id", 1).to_list(None) == sessions
+    assert await db.audit.count_documents({}) == audit_count
+    me = await client.get("/api/v1/auth/me", headers=engineer_headers)
+    assert me.status_code == 200 and me.json()["defaultLanding"] == old["defaultLanding"]
+
+
 async def test_forced_password_change_revokes_all_and_replaces_current_session(client, db, application):
     """Restrict initial administrator actions and atomically invalidate previous bearer versions."""
     login = {"email": "admin@portfolio.local", "password": DEMO_PASSWORD}

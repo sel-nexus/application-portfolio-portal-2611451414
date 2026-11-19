@@ -1,6 +1,6 @@
 # Application Portfolio Portal
 
-Identity slice: internal sign-in at `/`, signed-in shell and `/profile`. No signup or unfinished feature pages are exposed. Dashboard and Applications preferences are stored using their final contract; until those slices are added, successful sign-in and password change open the implemented My Profile route.
+Complete enterprise inventory portal: internal sign-in at `/`, Executive Dashboard, portfolio/application maintenance, reports and CSV exports, user/role administration, audit history and My Profile. Role and portfolio access are enforced by FastAPI against persisted MongoDB state. Executive/Administrator default to Dashboard; other roles default to Applications, unless a profile preference overrides it.
 
 ## Local development
 
@@ -39,15 +39,21 @@ Frontend exports `api<T>`, `ApiError`, `TOKEN_KEY`, `SESSION_EXPIRED`, `useAuth`
 
 ## Verification
 
-Tests are authored for the parent developer to execute. Backend uses isolated, uniquely named real Mongo databases, removing only each test database on teardown:
+Tests have been executed during development (see the separately published test report). Backend uses isolated, uniquely named real Mongo databases, removing only each test database on teardown:
 
 - `cd backend && PYTHONPATH=. "$HOME/venvs/app/bin/python" -m pytest -q tests/test_identity.py`
 - `cd frontend && node node_modules/vitest/vitest.mjs run src/features/identity/identity.test.tsx`
 - `cd frontend && npm run build`
 - `"$HOME/venvs/app/bin/python" -m compileall -q backend/app`
 
-Playwright identity journeys are written now, not executed in this slice. They require a dedicated disposable Mongo database (`E2E_MONGODB_DB=portal_e2e`), generated `E2E_JWT_SECRET`, and initial demo credentials. Do not point browser tests at production. The administrator journey changes and restores its public password; the forced-change assertion requires a fresh baseline. Run later from frontend: `node node_modules/@playwright/test/cli.js test`.
+Playwright covers all seven feature journeys, including desktop/mobile, scoped denial, loading, refresh and sign-out. They require a dedicated disposable Mongo database (`E2E_MONGODB_DB=portal_e2e`), generated `E2E_JWT_SECRET`, and initial demo credentials. Do not point browser tests at production. The administrator journey changes and restores its public password; the forced-change assertion requires a fresh baseline. Run later from frontend: `node node_modules/@playwright/test/cli.js test`.
 
 ## Containers
 
-Export a generated `JWT_SECRET`, then `docker compose up --build -d`. The frontend listens on `PORTAL_PORT` (default 8080); nginx provides history fallback and service-name API proxy. Mongo has a named persistent volume and no exposed host port. Compose variables: `JWT_SECRET` (required), `MONGODB_DB`, `CORS_ORIGINS`, `SEED_ON_STARTUP`, `PORTAL_PORT`. Deployment must terminate HTTPS at a trusted reverse proxy/CDN. AWS deployment and compose execution are not verified by this slice.
+Export a generated `JWT_SECRET`, then `docker compose up --build -d`. The frontend listens on `PORTAL_PORT` (default 8080); nginx provides history fallback and service-name API proxy. Mongo has a named persistent volume and no exposed host port. Compose variables: `JWT_SECRET` (required), `MONGODB_DB`, `CORS_ORIGINS`, `SEED_ON_STARTUP`, `PORTAL_PORT`. Deployment must terminate HTTPS at a trusted reverse proxy/CDN. Compose build/start was verified successfully with Mongo and API health checks. AWS provisioning, CDN and HTTPS termination remain the deployment stage’s responsibility; no live AWS deployment is claimed.
+
+## Working policy and limits
+
+Empty Portfolio Leader assignment grants no access; unassigned Engineers are unrestricted. Delete and administration remain Administrator-only regardless of configurable permissions. Auditor has a separate read-only `/audit` view, without audit CSV. Empty portfolio quality is zero; audit dates use inclusive UTC days. These are documented conservative/inferred PRD decisions, not final policy sign-off. Writable inventory/account text rejects HTML-like markup and parent-directory traversal; ordinary punctuation and password characters remain supported. CSV neutralizes spreadsheet formulas.
+
+Dependency audit reports two moderate React Router 6 advisories. This client-only BrowserRouter application does not use server hydration or untrusted redirect targets, but upgrades should be reviewed before production. Local development builds can warn about a >500kB bundle when NODE_ENV=development; container builds use production mode. No external monitoring integrations, password recovery, high availability or multi-region deployment are included.

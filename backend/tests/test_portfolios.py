@@ -53,7 +53,7 @@ async def test_service_lifecycle_requeries_every_field_and_audits(db: Any, portf
     await portfolio_service.delete(actor, str(oid))
     assert await db.portfolios.find_one({"_id": oid}) is None
     events = await AuditRepository(db).filtered({"entityId": oid})
-    assert [row["action"] for row in events["items"]] == ["create", "edit", "delete"]
+    assert [row["action"] for row in events["items"]] == ["delete", "edit", "create"]
     for row in events["items"]:
         assert row["personId"] == str(actor["user"]["_id"])
         assert row["entityType"] == "portfolio" and row["time"] and row["summary"]
@@ -198,15 +198,46 @@ async def test_invalid_queries(db: Any, client: Any, params: dict[str, Any]) -> 
     assert response.status_code == 422
 
 
-async def test_security_strings_are_literal_data(db: Any, client: Any) -> None:
-    """Treat SQL, XSS, path and Mongo-looking text as data, not executable selectors."""
+@pytest.mark.parametrize("text", ["<script>alert(1)</script>", "<IMG src=x onerror=alert(1)>", "../../secret", r"..\..\secret"])
+async def test_dangerous_text_refused_without_mutation(db: Any, client: Any, text: str) -> None:
+    """Reject markup and traversal on every writable text field before persistence."""
     auth = await headers(client, db)
-    for text in ["' OR 1=1 --", "<script>alert(1)</script>", "../../secret", '{"$ne":null}']:
+    before = await db.portfolios.find({}).sort("_id", 1).to_list(None)
+    audit = await db.audit.find({}).sort("_id", 1).to_list(None)
+    for field in ("name", "owner", "description", "productArea"):
+        for method, path in [("POST", BASE), ("PUT", f"{BASE}/{before[0]['_id']}")]:
+            response = await client.request(method, path, headers=auth, json={**PAYLOAD, field: text})
+            assert response.status_code == 422
+            assert any(error["loc"] == ["body", field] for error in response.json()["detail"])
+            assert await db.portfolios.find({}).sort("_id", 1).to_list(None) == before
+            assert await db.audit.find({}).sort("_id", 1).to_list(None) == audit
+
+
+async def test_safe_security_metacharacters_are_literal_data(db: Any, client: Any) -> None:
+    """Preserve safe punctuation and literal SQL, regex and Mongo-looking searches."""
+    auth = await headers(client, db)
+    for text in ["' OR 1=1 --", '{"$ne":null}', ".*", "O'Brien & Sons (C++)"]:
         response = await client.post(BASE, headers=auth, json={**PAYLOAD, "name": text})
         assert response.status_code == 201
         response = await client.get(BASE, headers=auth, params={"search": text})
         assert response.status_code == 200 and response.json()["total"] == 1
         assert response.json()["items"][0]["name"] == text
+    for text in ["<script>alert(1)</script>", "../../secret"]:
+        response = await client.get(BASE, headers=auth, params={"search": text})
+        assert response.status_code == 200 and response.json()["total"] == 0
+
+
+async def test_valid_plain_portfolio_text_remains_unchanged(db: Any, client: Any) -> None:
+    """Preserve valid names, apostrophes, punctuation and multiline descriptions."""
+    auth = await headers(client, db)
+    valid = {**PAYLOAD, "name": "O'Brien & Sons (C++)", "owner": "Anne-Marie D'Arcy",
+             "productArea": "R&D / Analytics", "description": "2 < 3; 5 > 4.\nRevenue & analytics..."}
+    created = await client.post(BASE, headers=auth, json=valid)
+    assert created.status_code == 201
+    edited = await client.put(f"{BASE}/{created.json()['id']}", headers=auth, json=valid)
+    assert edited.status_code == 200
+    stored = await db.portfolios.find_one({"_id": ObjectId(created.json()["id"])})
+    assert {key: stored[key] for key in valid} == valid
 
 
 async def test_current_permissions_and_expired_session(db: Any, client: Any) -> None:

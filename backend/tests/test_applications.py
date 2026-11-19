@@ -178,12 +178,22 @@ async def test_validation_refuses_create_and_edit_without_writes(db: Any, client
 
 
 @pytest.mark.parametrize("key", ["name", "portfolioId"])
-async def test_missing_required_fields(db: Any, client: Any, payload: dict, key: str) -> None:
-    """Reject each missing required field rather than defaulting its identity."""
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+async def test_missing_required_fields(db: Any, client: Any, payload: dict, key: str, method: str) -> None:
+    """Reject each omitted identity on create/edit without application or audit writes."""
     auth = await headers(client, db)
+    before = await db.applications.find({}).sort("_id", 1).to_list(None)
+    audit = await db.audit.find({}).sort("_id", 1).to_list(None)
+    assert before
+    path = BASE if method == "POST" else f"{BASE}/{before[0]['_id']}"
     del payload[key]
-    response = await client.post(BASE, headers=auth, json=payload)
+    response = await client.request(method, path, headers=auth, json=payload)
     assert response.status_code == 422 and response.json()["detail"][0]["loc"][-1] == key
+    assert response.json()["detail"][0]["loc"] == ["body", key]
+    assert await db.applications.count_documents({}) == len(before)
+    assert await db.applications.find({}).sort("_id", 1).to_list(None) == before
+    assert await db.audit.count_documents({}) == len(audit)
+    assert await db.audit.find({}).sort("_id", 1).to_list(None) == audit
 
 
 @pytest.mark.parametrize("query", [{"page": 0}, {"page_size": 101}, {"page": "oops"}, {"risk": "$ne"},
@@ -267,3 +277,39 @@ async def test_csv_all_matching_utf8_safe_cells_and_audit(db: Any, client: Any, 
     for value in (" =formula", "\ttext", "\rtext", "\ntext"):
         assert safe_cell(value) == "'" + value
     assert safe_cell(100) == "100"
+
+
+@pytest.mark.parametrize("text", ["<script>alert(1)</script>", "<svg onload=alert(1)>", "../../secret", r"..\..\secret"])
+async def test_dangerous_text_refused_without_mutation(db: Any, client: Any, payload: dict, text: str) -> None:
+    """Reject markup and traversal on text and links without creating or editing rows."""
+    auth = await headers(client, db)
+    before = await db.applications.find({}).sort("_id", 1).to_list(None)
+    audit = await db.audit.find({}).sort("_id", 1).to_list(None)
+    fields = ("name", "description", "productArea", "businessOwner", "technologyOwner", "qualityOwner",
+              "technologyStack", "repositoryLink", "pipelineLink")
+    for field in fields:
+        # Links also reject dangerous text embedded inside otherwise valid HTTP URLs.
+        value = "https://example.com/" + text if field.endswith("Link") else text
+        for method, path in [("POST", BASE), ("PUT", f"{BASE}/{before[0]['_id']}")]:
+            response = await client.request(method, path, headers=auth, json={**payload, field: value})
+            assert response.status_code == 422
+            assert any(error["loc"] == ["body", field] for error in response.json()["detail"])
+            assert await db.applications.find({}).sort("_id", 1).to_list(None) == before
+            assert await db.audit.find({}).sort("_id", 1).to_list(None) == audit
+
+
+async def test_valid_plain_text_and_urls_remain_unchanged(db: Any, client: Any, payload: dict) -> None:
+    """Preserve names, multiline descriptions, technology punctuation and normal URLs."""
+    auth = await headers(client, db)
+    valid = {**payload, "name": "O'Brien & Sons (C++)", "businessOwner": "D'Arcy",
+             "description": "Revenue & analytics: 2 < 3, 5 > 4.\nSecond line; v1.2...",
+             "productArea": "R&D / Commerce", "technologyOwner": "Anne-Marie", "qualityOwner": "Zoë",
+             "technologyStack": "C++, C#, .NET 8 / Python; Node.js",
+             "repositoryLink": "https://example.com/team/repo?ref=main&lang=C%2B%2B#readme",
+             "pipelineLink": "http://build.example.com/job/app/"}
+    created = await client.post(BASE, headers=auth, json=valid)
+    assert created.status_code == 201
+    edited = await client.put(f"{BASE}/{created.json()['id']}", headers=auth, json=valid)
+    assert edited.status_code == 200
+    stored = await db.applications.find_one({"_id": ObjectId(created.json()["id"])})
+    assert {key: str(stored[key]) if isinstance(stored[key], ObjectId) else stored[key] for key in valid} == valid

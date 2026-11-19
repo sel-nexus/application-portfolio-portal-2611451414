@@ -3,6 +3,7 @@
 from typing import Annotated, Literal
 from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, HttpUrl, field_validator
+from app.schemas.text import plain_text
 
 Criticality = Literal["Low", "Medium", "High", "Critical"]
 Lifecycle = Literal["Active", "Deprecated", "Retired"]
@@ -35,6 +36,13 @@ class ApplicationPayload(BaseModel):
     openDefects: Count = 0
     openCriticalDefects: Count = 0
     risk: Risk = "Low"
+
+    @field_validator("name", "description", "productArea", "businessOwner", "technologyOwner",
+                     "qualityOwner", "technologyStack", "repositoryLink", "pipelineLink")
+    @classmethod
+    def safe_text(cls, value: str) -> str:
+        """Reject markup and traversal while preserving plain descriptions and URLs."""
+        return plain_text(value)
 
     @field_validator("name")
     @classmethod

@@ -79,7 +79,7 @@ it('pages users through URL, switches tabs and renders stored role configuration
   await user.click(screen.getByRole('button', { name: 'Previous' })); await screen.findByText('Person');
   await user.click(screen.getByRole('link', { name: 'Roles' }));
   await screen.findByText('Engineer duties'); expect(screen.getByLabelText('Current route')).toHaveTextContent('tab=roles');
-  expect(screen.queryByText('Audit log')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Audit log' })).toHaveAttribute('href', '/admin?tab=audit');
 });
 it('creates all fields with inline required errors then renders requery and edit facts without password', async () => {
   mount(); const user = userEvent.setup(); await screen.findByRole('table');

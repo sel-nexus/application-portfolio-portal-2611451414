@@ -1,7 +1,8 @@
 /** Verify persisted portfolio journeys against the live API; execute in the final test phase. */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import type { PortfolioDetail, PortfolioPage } from '../src/types';
+import type { PortfolioDetail, PortfolioPage, PortfolioPayload } from '../src/types';
+import { captureErrors, establishInitialSession, signIn, signInHttp } from './helpers';
 
 /** Capture JS errors and distinguish expected, asserted HTTP conflict responses. */
 function errorsFor(page: Page): string[] {
@@ -126,5 +127,102 @@ test('mobile engineer browses scoped options, preserves filters on refresh and h
   await expect(page.getByRole('link', { name: 'Edit portfolio' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Delete portfolio' })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('portfolios-mobile.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('assigned leader edits a portfolio through clicks, persists changes, and restores seed facts', async ({ page }, info) => {
+  const errors = captureErrors(page);
+  await page.goto('/');
+  const session = await signIn(page, 'leader@portfolio.local');
+  expect(session.user.role).toBe('Portfolio Leader');
+  const listing = page.waitForResponse(response => response.url().includes('/api/v1/portfolios?'));
+  await page.getByRole('link', { name: 'Portfolios', exact: true }).click();
+  const listResponse = await listing;
+  expect(listResponse.status()).toBe(200);
+  const inventory = await listResponse.json() as PortfolioPage;
+  const assigned = inventory.items.find(row => session.user.portfolioAccess.includes(row.id));
+  expect(assigned).toBeDefined();
+  if (!assigned) throw new Error('Leader has no assigned portfolio to edit');
+  const path = `/api/v1/portfolios/${assigned.id}`;
+  const detailResponse = page.waitForResponse(response => new URL(response.url()).pathname === path);
+  await page.getByRole('link', { name: assigned.name, exact: true }).click();
+  const originalResponse = await detailResponse;
+  expect(originalResponse.status()).toBe(200);
+  const original = await originalResponse.json() as PortfolioDetail;
+  const { name, owner, description, productArea, status } = original;
+  const restore: PortfolioPayload = { name, owner, description, productArea, status };
+  const changed: PortfolioPayload = {
+    ...restore, owner: `Leader journey ${Date.now()}-${info.workerIndex}`,
+    description: `Assigned leader persisted description ${Date.now()}`,
+  };
+  const headers = { Authorization: `Bearer ${session.token}` };
+  try {
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete portfolio' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Edit portfolio', exact: true }).click();
+    await expect(page.getByLabel('Owner', { exact: true })).toHaveValue(owner);
+    await page.getByLabel('Owner', { exact: true }).fill(changed.owner);
+    await page.getByLabel('Description', { exact: true }).fill(changed.description);
+    const saving = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'PUT');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    const savedResponse = await saving;
+    expect(savedResponse.status()).toBe(200);
+    expect(await savedResponse.json()).toMatchObject({ ...changed });
+    await expect(page.getByText(changed.owner, { exact: true })).toBeVisible();
+    await expect(page.getByText(changed.description, { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Back to portfolios', exact: true }).click();
+    const rereading = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'GET');
+    await page.getByRole('link', { name, exact: true }).click();
+    const persistedResponse = await rereading;
+    expect(persistedResponse.status()).toBe(200);
+    expect(await persistedResponse.json()).toMatchObject({ ...changed });
+    await expect(page.getByText(changed.owner, { exact: true })).toBeVisible();
+    await expect(page.getByText(changed.description, { exact: true })).toBeVisible();
+  } finally {
+    const restored = await page.request.put(path, { headers, data: restore });
+    expect(restored.status()).toBe(200);
+    expect(await restored.json()).toMatchObject({ ...restore });
+    const verified = await page.request.get(path, { headers });
+    expect(verified.status()).toBe(200);
+    expect(await verified.json()).toMatchObject({ ...restore });
+  }
+  const restoredDetail = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'GET');
+  await page.reload();
+  expect((await restoredDetail).status()).toBe(200);
+  await expect(page.locator('.facts').getByText(owner, { exact: true })).toBeVisible();
+  await expect(page.locator('.facts').getByText(description, { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('initial direct address hides an unassigned portfolio from a restricted leader', async ({ page }) => {
+  const errors = captureErrors(page, [404]);
+  const unrestricted = await signInHttp(page.request, 'executive@portfolio.local');
+  const inventoryResponse = await page.request.get('/api/v1/portfolios?page_size=100', {
+    headers: { Authorization: `Bearer ${unrestricted.token}` },
+  });
+  expect(inventoryResponse.status()).toBe(200);
+  const inventory = await inventoryResponse.json() as PortfolioPage;
+  const restricted = await signInHttp(page.request, 'leader@portfolio.local');
+  const hidden = inventory.items.find(row => !restricted.user.portfolioAccess.includes(row.id));
+  expect(hidden).toBeDefined();
+  if (!hidden) throw new Error('Unrestricted inventory has no portfolio outside leader scope');
+  const path = `/api/v1/portfolios/${hidden.id}`;
+  const hiddenResponse = await page.request.get(path, { headers: { Authorization: `Bearer ${unrestricted.token}` } });
+  expect(hiddenResponse.status()).toBe(200);
+  const detail = await hiddenResponse.json() as PortfolioDetail;
+  await establishInitialSession(page, restricted);
+  const refused = page.waitForResponse(response => new URL(response.url()).pathname === path);
+  // This is the sole initial browser entry, not a fabricated hidden UI link.
+  await page.goto(`/portfolios/${hidden.id}`);
+  const response = await refused;
+  expect(response.status()).toBe(404);
+  expect(await response.json()).toEqual({ detail: 'This record is not available.' });
+  await expect(page.getByRole('alert')).toHaveText('This record is not available.');
+  await expect(page.locator('.facts')).toHaveCount(0);
+  for (const value of [detail.name, detail.owner, detail.description, detail.productArea, ...detail.applications.map(app => app.name)]) {
+    if (value) await expect(page.locator('#main-content').getByText(value, { exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByRole('link', { name: 'Edit portfolio' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete portfolio' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

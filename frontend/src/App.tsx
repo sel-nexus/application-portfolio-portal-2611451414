@@ -13,6 +13,7 @@ import ApplicationListPage from './features/applications/ApplicationListPage';
 import ApplicationDetailPage from './features/applications/ApplicationDetailPage';
 import ApplicationFormPage from './features/applications/ApplicationFormPage';
 import ReportsPage from './features/reports/ReportsPage';
+import AdminPage from './features/admin/AdminPage';
 
 /** Revalidate the bearer on protected route navigation, including history Back. */
 function Protected() {
@@ -41,6 +42,7 @@ export default function App() {
           <Route element={<Protected />}>
             <Route element={<Shell />}>
               <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/admin" element={<AdminPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/reports/:report" element={<ReportsPage />} />

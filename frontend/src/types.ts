@@ -56,3 +56,12 @@ export interface DashboardResponse {
   productAreas: string[];
   risks: Risk[];
 }
+
+/** Describe administered writes separately from public profile facts. */
+export type Permission = 'view' | 'create' | 'edit' | 'delete' | 'export' | 'administer';
+export interface AdminUserPayload {
+  name: string; email: string; role: RoleName; portfolioAccess: string[];
+  status: 'Active' | 'Inactive'; managerName: string; vendor: boolean;
+}
+export interface AdminUserCreate extends AdminUserPayload { initialPassword: string }
+export interface AdminRole { id: string; name: RoleName; description: string; permissions: Permission[] }

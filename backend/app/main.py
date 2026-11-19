@@ -20,6 +20,7 @@ from app.routers.applications import router as applications_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.reports import router as reports_router
 from app.routers.admin import router as admin_router
+from app.routers.audit import router as audit_router
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(dashboard_router)
     application.include_router(reports_router)
     application.include_router(admin_router)
+    application.include_router(audit_router)
 
     @application.middleware("http")
     async def no_store(request: Request, call_next) -> AnyResponse:

@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 from bson import ObjectId
-from app.repositories.base import MongoRepository
+from app.repositories.base import MongoRepository, serialize
 
 
 class AuditRepository(MongoRepository):
@@ -19,4 +19,15 @@ class AuditRepository(MongoRepository):
 
     async def filtered(self, query: dict[str, Any], page: int = 1, page_size: int = 10) -> dict[str, Any]:
         """Read a bounded audit page using an internally constructed filter."""
-        return await self.page("audit", query, page, page_size, "time")
+        if page < 1 or not 1 <= page_size <= 100:
+            raise ValueError("Invalid pagination")
+        projection = {key: 1 for key in ("time", "person", "action", "entityType", "entityId", "summary")}
+        rows = await self.db.audit.find(query, projection).sort([("time", -1), ("_id", -1)]).skip(
+            (page - 1) * page_size).limit(page_size).to_list(None)
+        return {"items": [serialize(row) for row in rows], "total": await self.db.audit.count_documents(query),
+                "page": page, "page_size": page_size}
+
+    async def choices(self) -> dict[str, list[str]]:
+        """Read actor snapshots and actions without exposing identity credentials."""
+        return {"persons": sorted(await self.db.audit.distinct("person")),
+                "actions": sorted(await self.db.audit.distinct("action"))}

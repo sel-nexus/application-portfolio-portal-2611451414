@@ -65,3 +65,9 @@ export interface AdminUserPayload {
 }
 export interface AdminUserCreate extends AdminUserPayload { initialPassword: string }
 export interface AdminRole { id: string; name: RoleName; description: string; permissions: Permission[] }
+
+/** Describe public event facts and history-derived choices without credential payloads. */
+export interface AuditEvent {
+  id: string; time: string; person: string; action: string; entityType: string; entityId: string | null; summary: string;
+}
+export interface AuditPageResult extends PageResult<AuditEvent> { persons: string[]; actions: string[] }

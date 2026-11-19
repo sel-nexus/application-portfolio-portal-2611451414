@@ -37,6 +37,9 @@ export function Shell() {
           {!auth.user?.mustChangePassword && auth.user?.role === 'Administrator' && auth.user.permissions.includes('administer') && (
             <NavLink to="/admin">Administration</NavLink>
           )}
+          {!auth.user?.mustChangePassword && auth.user?.role === 'Auditor' && auth.user.permissions.includes('view') && (
+            <NavLink to="/audit">Audit history</NavLink>
+          )}
         </nav>
         <div className="account">
           <span>{auth.user?.name}</span>
